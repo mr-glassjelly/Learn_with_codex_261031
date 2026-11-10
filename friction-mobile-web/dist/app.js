@@ -43,7 +43,7 @@ const GROUPS = [
         "author": "책먹는무무",
         "collection": "문화생활 아지트",
         "paper": "#e6e0d7",
-        "ink": "#766451",
+        "ink": "#705e4b",
         "body": "오래된 골목 사이로 오후 햇살이 들었습니다.\n\n익숙한 풍경에도 매번 다른 빛이 있네요. 골목 끝 작은 가게에서 시간을 보내다가, 한결 가벼워진 기분으로 집으로 돌아왔어요.\n\n당신에게 잘 어울리는 동네는 어디인가요?",
         "recipient": "익숙한 골목을 걷는 당신에게",
         "signature": "늦가을의 햇살이 골목에 머무는 오후,\n책먹는무무 드림"
@@ -60,7 +60,7 @@ const GROUPS = [
         "author": "일곤",
         "collection": "일곤의 뉴스레터",
         "paper": "#eee1d3",
-        "ink": "#8b5c43",
+        "ink": "#82553e",
         "body": "토요일 오전에는 조금 늦게 책상에 앉습니다.\n\n커피 한 잔을 곁에 두고 이번 주에 읽었던 문장들을 다시 펼쳐보았어요. 매일 지나쳤던 것들이 편지를 쓸 때에는 조금 다르게 보입니다.\n\n오늘은 어떤 이야기를 편지에 담고 싶으신가요?",
         "recipient": "이번 주를 함께 보낸 구독자님께",
         "signature": "커피 한 잔과 함께 시작하는 토요일 아침,\n일곤 드림"
@@ -110,7 +110,7 @@ const GROUPS = [
         "author": "책먹는무무",
         "collection": "문화생활 아지트",
         "paper": "#e6e0d7",
-        "ink": "#766451",
+        "ink": "#705e4b",
         "body": "오래된 골목 사이로 오후 햇살이 들었습니다.\n\n익숙한 풍경에도 매번 다른 빛이 있네요. 골목 끝 작은 가게에서 시간을 보내다가, 한결 가벼워진 기분으로 집으로 돌아왔어요.\n\n당신에게 잘 어울리는 동네는 어디인가요?",
         "recipient": "익숙한 골목을 걷는 당신에게",
         "signature": "늦가을의 햇살이 골목에 머무는 오후,\n책먹는무무 드림"
@@ -201,7 +201,6 @@ function refreshRecords() {
     element.setAttribute('aria-labelledby', 'heading-' + id);
     const heading = element.querySelector('.section-heading h2');
     heading.id = 'heading-' + id; heading.textContent = title;
-    for (const button of element.querySelectorAll('[data-move]')) button.setAttribute('aria-label', title + (button.dataset.move === '-1' ? ' 이전 편지' : ' 다음 편지'));
     $('#recordsPage').append(element);
     const group = { id, title, createdAt: date, page: 'records', letters: dates.get(date), index: 0, element };
     groups.push(group); bindGroup(group);
@@ -222,7 +221,7 @@ function showPage(page) {
   $('.letter-preview').hidden = page === 'my';
   if (page === 'my') {
     const frame = $('#studyFrame');
-    if (!frame.getAttribute('src')) frame.setAttribute('src', 'study.html');
+    if (!frame.getAttribute('src')) frame.setAttribute('src', 'study.html?v=12');
   } else {
     const group = groups.find(g => g.page === page);
     if (group) renderPreview(group);
@@ -233,32 +232,43 @@ function showPage(page) {
 let sectionObserver = null;
 
 function groupFor(id) { return groups.find((group) => group.id === id); }
+function cardPositions(count) { return Array.from({ length: Math.min(4, count) }, (_, position) => position); }
 function renderGroup(group) {
   const deck = group.element.querySelector('.card-deck');
-  const existing = new Map([...deck.children].map((card) => [card.dataset.id, card]));
-  const visible = new Set();
-  for (let depth = Math.min(4, group.letters.length) - 1; depth >= 0; depth--) {
-    const letter = group.letters[(group.index + depth) % group.letters.length];
-    visible.add(letter.id);
-    const card = existing.get(letter.id) || cardTemplate.cloneNode(true);
-    card.dataset.id = letter.id;
-    card.className = 'letter-card ' + (depth === 0 ? 'front-card' : 'back-card') + (letter.title ? ' has-title' : '');
-    card.style.setProperty('--depth', depth);
+  for (const ghost of deck.querySelectorAll('[data-ghost]')) ghost.remove();
+  const existing = [...deck.children], used = new Set(), cards = new Map();
+  const positions = cardPositions(group.letters.length);
+  // Every resting cover sits at the center or to its right.
+  const priority = [0, 1, 2, 3];
+  for (const position of priority.filter(slot => positions.includes(slot))) {
+    const letter = group.letters[(group.index + position + group.letters.length) % group.letters.length];
+    const candidates = existing.filter(card => card.dataset.id === letter.id && !used.has(card));
+    const preferred = position === 0 ? (group.lastDirection || 0) : position;
+    const card = candidates.find(card => Number(card.dataset.position) === preferred) || candidates[0] || cardTemplate.cloneNode(true);
+    used.add(card); cards.set(position, card);
+    card.dataset.id = letter.id; card.dataset.position = String(position);
+    card.className = 'letter-card ' + (position === 0 ? 'front-card' : 'back-card side-card') + (letter.title ? ' has-title' : '');
+    card.style.setProperty('--offset', (position * 26) + 'px');
+    card.style.setProperty('--scale', String(1 - Math.abs(position) * .05));
+    card.style.setProperty('--layer', String(4 - Math.abs(position)));
     card.style.backgroundColor = letter.paper; card.style.color = letter.ink;
-    card.tabIndex = depth === 0 ? 0 : -1;
-    card.setAttribute('aria-hidden', String(depth !== 0));
-    card.setAttribute('aria-label', displayText(letterLabel(letter)) + ' · 편지 읽기');
+    card.tabIndex = Math.abs(position) <= 1 ? 0 : -1;
+    card.setAttribute('aria-hidden', String(Math.abs(position) > 1));
+    const action = position < 0 ? '이전 편지로 이동' : position > 0 ? '다음 편지로 이동' : '편지 읽기';
+    card.setAttribute('aria-label', action + ' · ' + displayText(letterLabel(letter)));
     card.querySelector('.card-recipient').textContent = displayText(letter.recipient);
     card.querySelector('h3').textContent = displayText(letter.title);
     card.querySelector('h3').hidden = !letter.title;
     card.querySelector('.card-byline strong').textContent = displayText(letter.author) + ' 드림';
     card.querySelector('.card-byline span').textContent = displayText(letter.collection);
     card.querySelector('.card-byline span').hidden = !letter.collection;
-    deck.append(card);
   }
-  for (const card of [...deck.children]) if (!visible.has(card.dataset.id)) card.remove();
+  for (const position of [...positions].sort((a, b) => Math.abs(b) - Math.abs(a) || a - b)) deck.append(cards.get(position));
+  for (const card of existing) if (!used.has(card)) card.remove();
+  deck.setAttribute('role', 'group');
+  deck.setAttribute('aria-roledescription', '캐러셀');
+  deck.setAttribute('aria-label', group.title + ' · 좌우로 넘기는 편지');
   group.element.querySelector('.letter-count').textContent = group.letters.length + '통';
-  group.element.querySelector('.vertical-index').innerHTML = String(group.index + 1).padStart(2, '0') + '<i></i>' + String(group.letters.length).padStart(2, '0');
 }
 function renderPreview(group) {
   activeId = group.id;
@@ -271,13 +281,55 @@ function renderPreview(group) {
   $('#previewOrigin').textContent = displayText(letter.collection);
   $('#previewOrigin').hidden = !letter.collection;
 }
-function move(id, direction) {
-  const group = groupFor(id); if (!group) return;
+function stackTransform(position) { return 'translateX(' + (position * 26) + 'px) scale(' + (1 - position * .05) + ')'; }
+function clearDeckDrag(deck) {
+  deck.style.setProperty('--drag', '0px');
+  deck.style.setProperty('--swipe-progress', '0');
+  deck.style.setProperty('--front-opacity', '1');
+}
+function commitMove(group, direction) {
+  group.lastDirection = direction;
   group.index = (group.index + direction + group.letters.length) % group.letters.length;
   renderGroup(group); renderPreview(group);
   const current = group.letters[group.index];
   $('[role="status"]').textContent = group.title + ', ' + (group.index + 1) + '번째 편지, ' + displayText(letterLabel(current));
-  if (dialog.open && readingId === id) renderReading(group);
+  if (dialog.open && readingId === group.id) renderReading(group);
+}
+function move(id, direction) {
+  const group = groupFor(id);
+  if (!group || group.animating || group.letters.length < 2) return;
+  const deck = group.element.querySelector('.card-deck');
+  const front = deck.querySelector('.front-card');
+  const next = deck.querySelector('[data-position="1"]');
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if (reduced || !front || typeof front.animate !== 'function' || dialog.open) {
+    clearDeckDrag(deck); commitMove(group, direction); return;
+  }
+  const computed = (card, position) => window.getComputedStyle ? window.getComputedStyle(card) : { transform: stackTransform(position), opacity: '1' };
+  const frontStyle = computed(front, 0), nextStyle = next ? computed(next, 1) : null;
+  // Save the live drag pose before advancing the data. The departing cover is
+  // a transient visual only; resting stacks never contain a card on the left.
+  const from = { transform: frontStyle.transform, opacity: Number(frontStyle.opacity) };
+  const incomingFrom = direction > 0 && nextStyle ? { transform: nextStyle.transform, opacity: Number(nextStyle.opacity) } : null;
+  const outgoing = front.cloneNode(true);
+  outgoing.dataset.ghost = 'true'; outgoing.classList.add('exit-ghost');
+  outgoing.tabIndex = -1; outgoing.setAttribute('aria-hidden', 'true');
+  const hadFocus = deck.contains?.(document.activeElement);
+  group.animating = true;
+  clearDeckDrag(deck); commitMove(group, direction);
+  const incoming = deck.querySelector('.front-card');
+  deck.append(outgoing);
+  const distance = Math.min(360, deck.getBoundingClientRect().width * 1.05);
+  const timing = { duration: 420, easing: 'cubic-bezier(.22,.7,.2,1)', fill: 'forwards' };
+  const exiting = outgoing.animate([from, { transform: 'translateX(' + (direction > 0 ? -distance : distance) + 'px) scale(.97)', opacity: 0 }], timing);
+  const entering = incoming.animate([incomingFrom || { transform: 'translateX(' + (-distance * .55) + 'px) scale(.97)', opacity: 0 }, { transform: stackTransform(0), opacity: 1 }], timing);
+  let finished = false;
+  const finish = () => {
+    if (finished) return; finished = true;
+    outgoing.remove(); exiting.cancel(); entering.cancel(); group.animating = false;
+    if (hadFocus && group.page === currentPage) incoming.focus({ preventScroll: true });
+  };
+  Promise.allSettled([exiting.finished, entering.finished]).then(finish);
 }
 function renderReading(group) {
   const letter = group.letters[group.index];
@@ -310,15 +362,64 @@ function openLetter(group) {
   renderPreview(group); renderReading(group); dialog.showModal(); dialog.scrollTop = 0;
 }
 function closeLetter() { dialog.close(); readingId = null; opener?.focus(); }
+function swipeDirection(dx, dy, width) {
+  const threshold = Math.max(32, Math.min(60, width * .16));
+  return Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.2 ? (dx < 0 ? 1 : -1) : 0;
+}
 function bindGroup(group) {
   renderGroup(group);
+  const deck = group.element.querySelector('.card-deck');
+  let gesture = null, suppressClickUntil = 0;
+  function resetGesture(resetStyles = true) {
+    deck.classList.remove('is-dragging'); if (resetStyles) clearDeckDrag(deck); gesture = null;
+  }
+  deck.addEventListener('pointerdown', (event) => {
+    if (group.animating || event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, mode: null };
+  });
+  deck.addEventListener('pointermove', (event) => {
+    if (!gesture || gesture.id !== event.pointerId) return;
+    const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+    if (!gesture.mode && Math.max(Math.abs(dx), Math.abs(dy)) > 10) {
+      if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+        gesture.mode = 'horizontal'; deck.classList.add('is-dragging');
+        deck.setPointerCapture?.(event.pointerId);
+      } else if (Math.abs(dy) > Math.abs(dx) * 1.2) gesture.mode = 'vertical';
+    }
+    if (gesture.mode === 'horizontal') {
+      event.preventDefault();
+      const width = deck.getBoundingClientRect().width;
+      const progress = Math.min(1, Math.max(0, -dx / (width * .7)));
+      deck.style.setProperty('--drag', Math.max(-width * .85, Math.min(width * .85, dx * .8)) + 'px');
+      deck.style.setProperty('--swipe-progress', String(progress));
+      deck.style.setProperty('--front-opacity', String(1 - Math.min(.8, Math.abs(dx) / width * .8)));
+    }
+  });
+  deck.addEventListener('pointerup', (event) => {
+    if (!gesture || gesture.id !== event.pointerId) return;
+    const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+    const direction = gesture.mode !== 'vertical' ? swipeDirection(dx, dy, deck.getBoundingClientRect().width) : 0;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) > 10) suppressClickUntil = Date.now() + 400;
+    if (direction && group.letters.length > 1) { resetGesture(false); move(group.id, direction); }
+    else resetGesture();
+  });
+  deck.addEventListener('pointercancel', () => { suppressClickUntil = Date.now() + 400; resetGesture(); });
   group.element.addEventListener('click', (event) => {
-    const moving = event.target.closest('[data-move]');
-    if (moving) { move(group.id, Number(moving.dataset.move)); return; }
-    if (event.target.closest('.front-card')) openLetter(group);
+    if (group.animating || Date.now() < suppressClickUntil) return;
+    const card = event.target.closest('.letter-card');
+    if (card) {
+      const position = Number(card.dataset.position);
+      if (position === 0) openLetter(group); else move(group.id, position > 0 ? 1 : -1);
+      return;
+    }
+    if (event.target.closest('.stack-stage') && group.letters.length > 1) {
+      const box = deck.getBoundingClientRect();
+      if (event.clientX < box.left) move(group.id, -1);
+      else if (event.clientX > box.right) move(group.id, 1);
+    }
   });
   group.element.addEventListener('keydown', (event) => {
-    if (['ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); move(group.id, event.key === 'ArrowDown' ? 1 : -1); }
+    if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); move(group.id, event.key === 'ArrowRight' ? 1 : -1); }
   });
 }
 for (const group of groups) bindGroup(group);
